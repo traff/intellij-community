@@ -135,6 +135,11 @@ public class MavenResourceCompilerConfigurationGenerator {
         resourceConfig.escapeWindowsPaths = Boolean.parseBoolean(escapeWindowsPaths);
       }
 
+      String overwrite = MavenJDOMUtil.findChildValueByPath(pluginConfiguration, "overwrite");
+      if (overwrite != null) {
+        resourceConfig.overwrite = Boolean.parseBoolean(overwrite);
+      }
+
       projectConfig.moduleConfigurations.put(module.getName(), resourceConfig);
     }
 
@@ -168,7 +173,7 @@ public class MavenResourceCompilerConfigurationGenerator {
   private Properties getFilteringProperties(MavenProject mavenProject) {
     final Properties properties = new Properties();
 
-    for (String each : mavenProject.getFilters()) {
+    for (String each : mavenProject.getFilterPropertiesFiles()) {
       try {
         FileInputStream in = new FileInputStream(each);
         try {

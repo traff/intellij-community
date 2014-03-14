@@ -194,7 +194,7 @@ public class GitLogProvider implements VcsLogProvider {
 
       boolean atLeastOneBranchExists = false;
       for (String branchName : filterCollection.getBranchFilter().getBranchNames()) {
-        if (repository.getBranches().findBranchByName(branchName) != null) {
+        if (branchName.equals("HEAD") || repository.getBranches().findBranchByName(branchName) != null) {
           filterParameters.add(branchName);
           atLeastOneBranchExists = true;
         }
@@ -257,6 +257,11 @@ public class GitLogProvider implements VcsLogProvider {
   @Override
   public Collection<String> getContainingBranches(@NotNull VirtualFile root, @NotNull Hash commitHash) throws VcsException {
     return GitBranchUtil.getBranches(myProject, root, true, true, commitHash.asString());
+  }
+
+  @Override
+  public boolean supportsFastUnorderedCommits() {
+    return true;
   }
 
   private static String prepareParameter(String paramName, String value) {
