@@ -53,6 +53,8 @@ public class PydevConsoleExecuteActionHandler extends ProcessBackedConsoleExecut
   private final ConsoleCommunication myConsoleCommunication;
   private boolean myEnabled = false;
 
+  private int ipythonInputPromptCount = 2;
+
   public PydevConsoleExecuteActionHandler(LanguageConsoleView consoleView,
                                           ProcessHandler myProcessHandler,
                                           ConsoleCommunication consoleCommunication) {
@@ -225,7 +227,13 @@ public class PydevConsoleExecuteActionHandler extends ProcessBackedConsoleExecut
           }
           else {
             if (!myConsoleCommunication.isWaitingForInput()) {
-              ordinaryPrompt(console, currentEditor);
+
+              if(ipythonEnabled(console)){
+                ipythonInPrompt(console, currentEditor);
+              } else {
+                ordinaryPrompt(console, currentEditor);
+              }
+              //ordinaryPrompt(console, currentEditor);
             }
             setCurrentIndentSize(0);
           }
@@ -247,6 +255,7 @@ public class PydevConsoleExecuteActionHandler extends ProcessBackedConsoleExecut
   }
 
   private void ordinaryPrompt(LanguageConsoleImpl console, Editor currentEditor) {
+
     if (!myConsoleCommunication.isExecuting()) {
       if (!PyConsoleUtil.ORDINARY_PROMPT.equals(console.getPrompt())) {
         console.setPrompt(PyConsoleUtil.ORDINARY_PROMPT);
@@ -256,6 +265,17 @@ public class PydevConsoleExecuteActionHandler extends ProcessBackedConsoleExecut
     else {
       executingPrompt(console);
     }
+  }
+
+  private boolean ipythonEnabled(LanguageConsoleImpl console){
+    return console.getFile().getVirtualFile() != null ?
+           PyConsoleUtil.getOrCreateIPythonData(console.getFile().getVirtualFile()).isIPythonEnabled() : false;
+  }
+
+  private void ipythonInPrompt(LanguageConsoleImpl console, Editor currentEditor){
+    ipythonInputPromptCount++;
+    console.setPrompt("In[" + ipythonInputPromptCount /2 + "]:");
+    PyConsoleUtil.scrollDown(currentEditor);
   }
 
   private static void executingPrompt(LanguageConsoleImpl console) {
@@ -279,7 +299,11 @@ public class PydevConsoleExecuteActionHandler extends ProcessBackedConsoleExecut
       final LanguageConsoleImpl console = myConsoleView.getConsole();
       final Editor currentEditor = console.getConsoleEditor();
 
-      ordinaryPrompt(console, currentEditor);
+      if(ipythonEnabled(console)){
+        ipythonInPrompt(console, currentEditor);
+      } else {
+        ordinaryPrompt(console, currentEditor);
+      }
     }
   }
 
