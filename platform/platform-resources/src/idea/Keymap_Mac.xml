@@ -353,8 +353,11 @@
     <action id="SelectNextOccurrence">
       <keyboard-shortcut first-keystroke="control G"/>
     </action>
-    <action id="UnselectLastOccurrence">
+    <action id="UnselectPreviousOccurrence">
       <keyboard-shortcut first-keystroke="control shift G"/>
+    </action>
+    <action id="SelectAllOccurrences">
+      <keyboard-shortcut first-keystroke="meta control G"/>
     </action>
 
     <action id="Run">
@@ -544,6 +547,10 @@
 
     <action id ="Refactorings.QuickListPopupAction">
       <keyboard-shortcut first-keystroke="control T"/>
+    </action>
+
+    <action id="NewScratchFile">
+      <keyboard-shortcut first-keystroke="meta shift N"/>
     </action>
   </keymap>
 </component>

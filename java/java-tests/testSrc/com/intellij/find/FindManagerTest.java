@@ -194,7 +194,7 @@ public class FindManagerTest extends DaemonAnalyzerTestCase {
     PsiDirectory psiDirectory = FindInProjectUtil.getPsiDirectory(findModel, myProject);
     List<UsageInfo> result = new ArrayList<UsageInfo>();
     final CommonProcessors.CollectProcessor<UsageInfo> collector = new CommonProcessors.CollectProcessor<UsageInfo>(result);
-    FindInProjectUtil.findUsages(findModel, psiDirectory, myProject, true, collector, new FindUsagesProcessPresentation(FindInProjectUtil.setupViewPresentation(true, findModel)));
+    FindInProjectUtil.findUsages(findModel, psiDirectory, myProject, collector, new FindUsagesProcessPresentation(FindInProjectUtil.setupViewPresentation(true, findModel)));
     return result;
   }
 
@@ -599,5 +599,20 @@ public class FindManagerTest extends DaemonAnalyzerTestCase {
 
     findModel.setInCommentsOnly(true);
     FindManagerTestUtils.runFindForwardAndBackward(myFindManager, findModel, text, "java");
+  }
+
+  public void testPlusWholeWordsOnly() throws Exception {
+    createFile(myModule, "A.java", "3 + '+' + 2");
+
+    FindModel findModel = FindManagerTestUtils.configureFindModel("'+' +");
+    findModel.setMultipleFiles(true);
+
+    assertSize(1, findUsages(findModel));
+
+    findModel.setCaseSensitive(true);
+    assertSize(1, findUsages(findModel));
+
+    findModel.setWholeWordsOnly(true);
+    assertSize(1, findUsages(findModel));
   }
 }

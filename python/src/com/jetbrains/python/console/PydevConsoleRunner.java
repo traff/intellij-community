@@ -20,6 +20,7 @@ import com.google.common.collect.Maps;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.ExecutionHelper;
 import com.intellij.execution.Executor;
+import com.intellij.execution.configurations.EncodingEnvironmentUtil;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.console.ConsoleHistoryController;
 import com.intellij.execution.console.LanguageConsoleView;
@@ -36,6 +37,11 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Caret;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.actionSystem.EditorAction;
+import com.intellij.openapi.editor.actionSystem.EditorWriteActionHandler;
+import com.intellij.openapi.editor.actions.SplitLineAction;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
@@ -54,8 +60,8 @@ import com.intellij.openapi.vfs.encoding.EncodingManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.impl.source.tree.FileElement;
-import com.intellij.remotesdk.RemoteSdkCredentials;
-import com.intellij.remotesdk.RemoteSshProcess;
+import com.intellij.remote.RemoteSdkCredentials;
+import com.intellij.remote.RemoteSshProcess;
 import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.IJSwingUtilities;
@@ -159,6 +165,8 @@ public class PydevConsoleRunner extends AbstractConsoleRunnerWithHistory<PythonC
 
     actions.add(backspaceHandlingAction);
     actions.add(interruptAction);
+
+    actions.add(createSplitLineAction());
 
     AnAction showVarsAction = new ShowVarsAction();
     toolbarActions.add(showVarsAction);
@@ -288,8 +296,12 @@ public class PydevConsoleRunner extends AbstractConsoleRunnerWithHistory<PythonC
     }
     else {
       myCommandLine = myCommandLineArgumentsProvider.getCommandLineString();
+      Map<String, String> envs = myCommandLineArgumentsProvider.getAdditionalEnvs();
+      if (envs != null) {
+        EncodingEnvironmentUtil.fixDefaultEncodingIfMac(envs, getProject());
+      }
       final Process server = ProcessRunner
-        .createProcess(getWorkingDir(), myCommandLineArgumentsProvider.getAdditionalEnvs(), myCommandLineArgumentsProvider.getArguments());
+        .createProcess(getWorkingDir(), envs, myCommandLineArgumentsProvider.getArguments());
       try {
         myPydevConsoleCommunication = new PydevConsoleCommunication(getProject(), myPorts[0], server, myPorts[1]);
       }
@@ -454,7 +466,8 @@ public class PydevConsoleRunner extends AbstractConsoleRunnerWithHistory<PythonC
         e.getPresentation().setEnabled(enabled);
       }
     };
-    anAction.registerCustomShortcutSet(KeyEvent.VK_C, InputEvent.CTRL_MASK, getConsoleView().getConsole().getConsoleEditor().getComponent());
+    anAction
+      .registerCustomShortcutSet(KeyEvent.VK_C, InputEvent.CTRL_MASK, getConsoleView().getConsole().getConsoleEditor().getComponent());
     anAction.getTemplatePresentation().setVisible(false);
     return anAction;
   }
@@ -566,6 +579,40 @@ public class PydevConsoleRunner extends AbstractConsoleRunnerWithHistory<PythonC
     };
     stopAction.copyFrom(generalStopAction);
     return stopAction;
+  }
+
+  protected AnAction createSplitLineAction() {
+
+    class ConsoleSplitLineAction extends EditorAction {
+
+      private static final String CONSOLE_SPLIT_LINE_ACTION_ID = "Console.SplitLine";
+
+      public ConsoleSplitLineAction() {
+        super(new EditorWriteActionHandler() {
+
+          private final SplitLineAction mySplitLineAction = new SplitLineAction();
+
+          @Override
+          public boolean isEnabled(Editor editor, DataContext dataContext) {
+            return mySplitLineAction.getHandler().isEnabled(editor, dataContext);
+          }
+
+          @Override
+          public void executeWriteAction(Editor editor, @Nullable Caret caret, DataContext dataContext) {
+            ((EditorWriteActionHandler)mySplitLineAction.getHandler()).executeWriteAction(editor, caret, dataContext);
+            editor.getCaretModel().getCurrentCaret().moveCaretRelatively(0, 1, false, true);
+          }
+        });
+      }
+
+      public void setup() {
+        EmptyAction.setupAction(this, CONSOLE_SPLIT_LINE_ACTION_ID, null);
+      }
+    }
+
+    ConsoleSplitLineAction action = new ConsoleSplitLineAction();
+    action.setup();
+    return action;
   }
 
   private void closeCommunication() {

@@ -20,6 +20,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.filters.ElementFilter;
@@ -493,6 +494,13 @@ public class PsiImplUtil {
       return PsiUtil.captureToplevelWildcards(type, expression);
     }
 
+    final PsiElement parent = toplevel.getParent();
+    if (parent instanceof PsiExpressionList &&
+        PsiUtil.isLanguageLevel8OrHigher(parent) &&
+        parent.getParent() instanceof PsiCallExpression) {
+      return PsiUtil.captureToplevelWildcards(type, expression);
+    }
+
     final PsiType normalized = doNormalizeWildcardByPosition(type, expression, toplevel);
     LOG.assertTrue(normalized.isValid(), type);
     if (normalized instanceof PsiClassType && !PsiUtil.isAccessedForWriting(toplevel)) {
@@ -745,6 +753,30 @@ public class PsiImplUtil {
     }
 
     return result;
+  }
+
+  private static final Key<Boolean> TYPE_ANNO_MARK = Key.create("type.annotation.mark");
+
+  public static void markTypeAnnotations(@NotNull PsiTypeElement typeElement) {
+    PsiElement left = PsiTreeUtil.skipSiblingsBackward(typeElement, PsiComment.class, PsiWhiteSpace.class, PsiAnnotation.class);
+    if (left instanceof PsiModifierList) {
+      for (PsiAnnotation annotation : ((PsiModifierList)left).getAnnotations()) {
+        if (findApplicableTarget(annotation, TargetType.TYPE_USE) == TargetType.TYPE_USE) {
+          annotation.putUserData(TYPE_ANNO_MARK, Boolean.TRUE);
+        }
+      }
+    }
+  }
+
+  public static void deleteTypeAnnotations(@NotNull PsiTypeElement typeElement) {
+    PsiElement left = PsiTreeUtil.skipSiblingsBackward(typeElement, PsiComment.class, PsiWhiteSpace.class, PsiAnnotation.class);
+    if (left instanceof PsiModifierList) {
+      for (PsiAnnotation annotation : ((PsiModifierList)left).getAnnotations()) {
+        if (TYPE_ANNO_MARK.get(annotation) == Boolean.TRUE) {
+          annotation.delete();
+        }
+      }
+    }
   }
 
   public static boolean isLeafElementOfType(@Nullable PsiElement element, IElementType type) {

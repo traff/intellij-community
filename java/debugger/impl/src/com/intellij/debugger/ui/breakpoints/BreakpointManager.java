@@ -44,9 +44,7 @@ import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiField;
-import com.intellij.psi.PsiFile;
 import com.intellij.util.Alarm;
 import com.intellij.util.EventDispatcher;
 import com.intellij.xdebugger.XDebuggerManager;
@@ -54,9 +52,9 @@ import com.intellij.xdebugger.XDebuggerUtil;
 import com.intellij.xdebugger.breakpoints.*;
 import com.intellij.xdebugger.impl.DebuggerSupport;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
-import com.intellij.xdebugger.impl.breakpoints.BreakpointState;
 import com.intellij.xdebugger.impl.breakpoints.XBreakpointManagerImpl;
 import com.intellij.xdebugger.impl.breakpoints.XDependentBreakpointManager;
+import com.intellij.xdebugger.impl.breakpoints.XLineBreakpointImpl;
 import com.sun.jdi.InternalException;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.request.*;
@@ -174,13 +172,16 @@ public class BreakpointManager {
     DebuggerInvocationUtil.swingInvokeLater(myProject, new Runnable() {
       @Override
       public void run() {
-        final RangeHighlighter highlighter = ((BreakpointWithHighlighter)breakpoint).getHighlighter();
-        if (highlighter != null) {
-          final GutterIconRenderer renderer = highlighter.getGutterIconRenderer();
-          if (renderer != null) {
-            DebuggerSupport.getDebuggerSupport(JavaDebuggerSupport.class).getEditBreakpointAction().editBreakpoint(
-              myProject, editor, breakpoint, renderer
-            );
+        XBreakpoint xBreakpoint = breakpoint.myXBreakpoint;
+        if (xBreakpoint instanceof XLineBreakpointImpl) {
+          RangeHighlighter highlighter = ((XLineBreakpointImpl)xBreakpoint).getHighlighter();
+          if (highlighter != null) {
+            GutterIconRenderer renderer = highlighter.getGutterIconRenderer();
+            if (renderer != null) {
+              DebuggerSupport.getDebuggerSupport(JavaDebuggerSupport.class).getEditBreakpointAction().editBreakpoint(
+                myProject, editor, breakpoint.myXBreakpoint, renderer
+              );
+            }
           }
         }
       }
@@ -445,7 +446,6 @@ public class BreakpointManager {
                   //Breakpoint breakpoint = factory.createBreakpoint(myProject, breakpointNode);
                   Breakpoint breakpoint = createBreakpoint(categoryName, breakpointNode);
                   breakpoint.readExternal(breakpointNode);
-                  addBreakpoint(breakpoint);
                   nameToBreakpointMap.put(breakpoint.getDisplayName(), breakpoint);
                 }
               //}
@@ -527,23 +527,28 @@ public class BreakpointManager {
   }
 
   private Breakpoint createBreakpoint(String category, Element breakpointNode) throws InvalidDataException {
+    XBreakpoint xBreakpoint = null;
     if (category.equals(LineBreakpoint.CATEGORY.toString())) {
-      XLineBreakpoint xBreakpoint = createXLineBreakpoint(JavaLineBreakpointType.class, breakpointNode);
-      return LineBreakpoint.create(myProject, xBreakpoint);
+      xBreakpoint = createXLineBreakpoint(JavaLineBreakpointType.class, breakpointNode);
     }
     else if (category.equals(MethodBreakpoint.CATEGORY.toString())) {
-      XLineBreakpoint xBreakpoint =  createXLineBreakpoint(JavaMethodBreakpointType.class, breakpointNode);
-      return MethodBreakpoint.create(myProject, xBreakpoint);
+      if (breakpointNode.getAttribute("url") != null) {
+        xBreakpoint = createXLineBreakpoint(JavaMethodBreakpointType.class, breakpointNode);
+      }
+      else {
+        xBreakpoint = createXBreakpoint(JavaWildcardMethodBreakpointType.class, breakpointNode);
+      }
     }
     else if (category.equals(FieldBreakpoint.CATEGORY.toString())) {
-      XLineBreakpoint xBreakpoint =  createXLineBreakpoint(JavaFieldBreakpointType.class, breakpointNode);
-      return FieldBreakpoint.create(myProject, "", xBreakpoint);
+      xBreakpoint = createXLineBreakpoint(JavaFieldBreakpointType.class, breakpointNode);
     }
     else if (category.equals(ExceptionBreakpoint.CATEGORY.toString())) {
-      XBreakpoint xBreakpoint =  createXBreakpoint(JavaExceptionBreakpointType.class, breakpointNode);
-      return new ExceptionBreakpoint(myProject, xBreakpoint);
+      xBreakpoint =  createXBreakpoint(JavaExceptionBreakpointType.class, breakpointNode);
     }
-    throw new IllegalStateException("Unknown breakpoint category " + category);
+    if (xBreakpoint == null) {
+      throw new IllegalStateException("Unknown breakpoint category " + category);
+    }
+    return myBreakpoints.get(xBreakpoint);
   }
 
   private <B extends XBreakpoint<?>> XBreakpoint createXBreakpoint(Class<? extends XBreakpointType<B, ?>> typeCls,
@@ -587,6 +592,9 @@ public class BreakpointManager {
     breakpoint.updateUI();
     RequestManagerImpl.createRequests(breakpoint);
     myDispatcher.getMulticaster().breakpointsChanged();
+    if (breakpoint instanceof MethodBreakpoint || breakpoint instanceof WildcardMethodBreakpoint) {
+      XDebugSessionImpl.NOTIFICATION_GROUP.createNotification("Method breakpoints may dramatically slow down debugging", MessageType.WARNING).notify(myProject);
+    }
   }
 
   private synchronized void onBreakpointAdded(XBreakpoint xBreakpoint) {
@@ -917,6 +925,7 @@ public class BreakpointManager {
   private final Alarm myAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD);
   public void fireBreakpointChanged(Breakpoint breakpoint) {
     breakpoint.reload();
+    breakpoint.updateUI();
     RequestManagerImpl.updateRequests(breakpoint);
     if (myAllowMulticasting) {
       // can be invoked from non-AWT thread
@@ -1048,15 +1057,5 @@ public class BreakpointManager {
   
   public String setProperty(String name, String value) {
     return myUIProperties.put(name, value);
-  }
-
-  public static PsiFile getPsiFile(XBreakpoint xBreakpoint, Project project) {
-    try {
-      final Document document = FileDocumentManager.getInstance().getDocument(xBreakpoint.getSourcePosition().getFile());
-      return PsiDocumentManager.getInstance(project).getPsiFile(document);
-    } catch (Exception e) {
-      LOG.error(e);
-    }
-    return null;
   }
 }
